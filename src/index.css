@@ -1,0 +1,45 @@
+body {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary-color: #007bff;
+  --background-color: #f6f8fb;
+  --text-color: #333;
+}
+
+.flowchart-container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.flowchart-container svg {
+  width: 100%;
+  height: auto;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.explanation-panel {
+  animation: slideIn 0.3s ease;
+}
+
+button:hover {
+  opacity: 0.8;
+}
+
+button:active {
+  transform: scale(0.95);
+}
