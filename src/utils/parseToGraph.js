@@ -1,10 +1,257 @@
 // src/utils/parseToGraph.js
 
+// Move SQL parser definition to the TOP, before any other code
+
+function parseSQLToGraph(code) {
+  console.log('=== SQL PARSER CALLED ===');
+  console.log('Code:', code);
+  
+  const nodes = [];
+  const edges = [];
+  let nodeId = 1;
+
+  const createNode = (text, type = 'process') => {
+    const node = { 
+      id: nodeId++,
+      text, 
+      type, 
+      shape: type === 'terminal' ? 'terminal' : type === 'decision' ? 'diamond' : type === 'io' ? 'parallelogram' : 'rectangle',
+      lineNumber: 1 
+    };
+    nodes.push(node);
+    console.log('Created node:', node);
+    return node;
+  };
+
+  const createEdge = (from, to, label = '') => {
+    const edge = { from: from.id, to: to.id, label };
+    edges.push(edge);
+    console.log('Created edge:', edge);
+  };
+
+  const startNode = createNode('Start', 'terminal');
+  let prevNode = startNode;
+
+  const upperCode = code.toUpperCase();
+  console.log('Uppercase code:', upperCode);
+  console.log('Contains SELECT?', upperCode.includes('SELECT'));
+  
+  if (upperCode.includes('SELECT')) {
+    console.log('Processing SELECT query...');
+    
+    const connectNode = createNode('Connect to Database', 'process');
+    createEdge(prevNode, connectNode);
+    prevNode = connectNode;
+
+    const selectMatch = code.match(/SELECT\s+(.*?)\s+FROM/i);
+    const columns = selectMatch ? selectMatch[1].trim() : '*';
+    console.log('Columns:', columns);
+    const selectNode = createNode(`Select: ${columns}`, 'io');
+    createEdge(prevNode, selectNode);
+    prevNode = selectNode;
+
+    const fromMatch = code.match(/FROM\s+(\w+)/i);
+    const tableName = fromMatch ? fromMatch[1] : 'table';
+    console.log('Table:', tableName);
+    const fromNode = createNode(`From: ${tableName}`, 'process');
+    createEdge(prevNode, fromNode);
+    prevNode = fromNode;
+
+    if (upperCode.includes('WHERE')) {
+      console.log('Processing WHERE clause...');
+      const whereMatch = code.match(/WHERE\s+(.*?)(?:ORDER|GROUP|LIMIT|;|$)/i);
+      const condition = whereMatch ? whereMatch[1].trim() : 'condition';
+      console.log('Condition:', condition);
+      const whereNode = createNode(`Where: ${condition}?`, 'decision');
+      createEdge(prevNode, whereNode);
+      
+      const yesNode = createNode('Include row', 'process');
+      const noNode = createNode('Skip row', 'process');
+      createEdge(whereNode, yesNode, 'Yes');
+      createEdge(whereNode, noNode, 'No');
+      
+      const mergeNode = createNode('Process next row', 'process');
+      createEdge(yesNode, mergeNode);
+      createEdge(noNode, mergeNode);
+      prevNode = mergeNode;
+    }
+
+    const returnNode = createNode('Return results', 'io');
+    createEdge(prevNode, returnNode);
+    prevNode = returnNode;
+  }
+
+  const endNode = createNode('End', 'terminal');
+  createEdge(prevNode, endNode);
+
+  console.log('=== SQL PARSER COMPLETE ===');
+  console.log('Total nodes:', nodes.length);
+  console.log('Total edges:', edges.length);
+  console.log('Nodes:', JSON.stringify(nodes, null, 2));
+  console.log('Edges:', JSON.stringify(edges, null, 2));
+
+  return { nodes, edges };
+}
+
+// Define HTML parser
+function parseHTMLToGraph(code) {
+  const nodes = [];
+  const edges = [];
+  let nodeId = 1;
+
+  const createNode = (text, type = 'process') => {
+    const node = { 
+      id: nodeId++,
+      text, 
+      type, 
+      shape: type === 'terminal' ? 'terminal' : type === 'io' ? 'parallelogram' : 'rectangle',
+      lineNumber: 1 
+    };
+    nodes.push(node);
+    return node;
+  };
+
+  const createEdge = (from, to, label = '') => {
+    edges.push({ from: from.id, to: to.id, label });
+  };
+
+  const startNode = createNode('Start', 'terminal');
+  let prevNode = startNode;
+
+  const receiveNode = createNode('Receive HTML', 'io');
+  createEdge(prevNode, receiveNode);
+  prevNode = receiveNode;
+
+  if (code.includes('<!DOCTYPE') || code.includes('<!doctype')) {
+    const doctypeNode = createNode('Parse DOCTYPE', 'process');
+    createEdge(prevNode, doctypeNode);
+    prevNode = doctypeNode;
+  }
+
+  if (code.includes('<html')) {
+    const htmlNode = createNode('Parse <html>', 'process');
+    createEdge(prevNode, htmlNode);
+    prevNode = htmlNode;
+  }
+
+  if (code.includes('<head')) {
+    const headNode = createNode('Process <head>', 'process');
+    createEdge(prevNode, headNode);
+    prevNode = headNode;
+
+    const titleMatch = code.match(/<title>(.*?)<\/title>/i);
+    if (titleMatch) {
+      const titleNode = createNode(`Title: "${titleMatch[1]}"`, 'process');
+      createEdge(prevNode, titleNode);
+      prevNode = titleNode;
+    }
+
+    if (code.includes('<meta')) {
+      const metaNode = createNode('Load metadata', 'process');
+      createEdge(prevNode, metaNode);
+      prevNode = metaNode;
+    }
+
+    if (code.includes('<link') || code.includes('<style')) {
+      const cssNode = createNode('Load CSS', 'process');
+      createEdge(prevNode, cssNode);
+      prevNode = cssNode;
+    }
+  }
+
+  if (code.includes('<body')) {
+    const bodyNode = createNode('Process <body>', 'process');
+    createEdge(prevNode, bodyNode);
+    prevNode = bodyNode;
+
+    const headerMatch = code.match(/<h[1-6]>(.*?)<\/h[1-6]>/i);
+    if (headerMatch) {
+      const headerNode = createNode(`Heading: "${headerMatch[1]}"`, 'io');
+      createEdge(prevNode, headerNode);
+      prevNode = headerNode;
+    }
+
+    if (code.includes('<p>')) {
+      const pNode = createNode('Render text', 'io');
+      createEdge(prevNode, pNode);
+      prevNode = pNode;
+    }
+
+    if (code.includes('<div')) {
+      const divNode = createNode('Create layout', 'process');
+      createEdge(prevNode, divNode);
+      prevNode = divNode;
+    }
+
+    if (code.includes('<img')) {
+      const imgNode = createNode('Show images', 'io');
+      createEdge(prevNode, imgNode);
+      prevNode = imgNode;
+    }
+  }
+
+  const renderNode = createNode('Render page', 'io');
+  createEdge(prevNode, renderNode);
+  prevNode = renderNode;
+
+  const displayNode = createNode('Display', 'io');
+  createEdge(prevNode, displayNode);
+  prevNode = displayNode;
+
+  const endNode = createNode('End', 'terminal');
+  createEdge(prevNode, endNode);
+
+  return { nodes, edges };
+}
+
+// Helper function to convert code to algorithm text
 function codeToAlgorithm(line, language = 'python') {
   // Convert code statements to high-level algorithmic descriptions
   
   // Print/Output statements
   if (/print\(|console\.log\(|System\.out\.println\(|printf\(|cout\s*<</.test(line)) {
+    // C printf with format specifiers
+    if (/printf\(/.test(line)) {
+      const printfMatch = line.match(/printf\(\s*"([^"]+)"/);
+      if (printfMatch) {
+        let formatStr = printfMatch[1];
+        // Remove format specifiers and newlines for cleaner display
+        let cleanStr = formatStr.replace(/%[diouxXeEfFgGaAcspn]/g, '').replace(/\\n/g, '').trim();
+        if (cleanStr.length > 0 && cleanStr.length < 30) {
+          return `Output "${cleanStr}"`;
+        }
+        // Check if it's just printing variables
+        const varMatch = line.match(/printf\([^,]+,\s*([^)]+)\)/);
+        if (varMatch) {
+          const vars = varMatch[1].split(',').map(v => v.trim()).slice(0, 2).join(', ');
+          return `Output ${vars}`;
+        }
+      }
+      return 'Output result';
+    }
+    
+    // C++ cout with endl or newline
+    if (/cout\s*<</.test(line)) {
+      const coutContent = line.match(/cout\s*<<\s*([^;]+)/);
+      if (coutContent) {
+        let content = coutContent[1].replace(/\s*<<\s*endl\s*$/, '').replace(/\s*<<\s*"\\\\n"\s*$/, '').trim();
+        // Check if it's a string literal
+        const stringMatch = content.match(/^["']([^"']+)["']/);
+        if (stringMatch) {
+          return `Output "${stringMatch[1]}"`;
+        }
+        // Check if it's a variable
+        if (/^\w+$/.test(content)) {
+          return `Output ${content}`;
+        }
+        // Multiple items being output
+        if (content.includes('<<')) {
+          return 'Output result';
+        }
+        return `Output ${content.substring(0, 20)}`;
+      }
+    }
+    
     const content = line.match(/["']([^"']+)["']/);
     if (content && content[1]) {
       return `Print "${content[1]}"`;
@@ -18,9 +265,30 @@ function codeToAlgorithm(line, language = 'python') {
     return 'Print result';
   }
   
+  // Input statements (scanf in C, cin in C++)
+  if (/scanf\(|cin\s*>>/.test(line)) {
+    // C scanf
+    if (/scanf\(/.test(line)) {
+      const scanfMatch = line.match(/scanf\([^,]+,\s*&?([^)]+)\)/);
+      if (scanfMatch) {
+        // Extract variable names, removing & and * operators
+        const vars = scanfMatch[1].split(',').map(v => v.trim().replace(/^[&*]+/, '')).join(', ');
+        return `Input: ${vars}`;
+      }
+      return 'Get input';
+    }
+    // C++ cin
+    const cinMatch = line.match(/cin\s*>>\s*([^;]+)/);
+    if (cinMatch) {
+      const vars = cinMatch[1].split('>>').map(v => v.trim()).join(', ');
+      return `Input: ${vars}`;
+    }
+    return 'Get input';
+  }
+  
   // Function/Method definitions
-  if (/^def\s+(\w+)|^function\s+(\w+)|^static\s+void\s+(\w+)|^void\s+(\w+)/.test(line)) {
-    const funcMatch = line.match(/(?:def|function|void)\s+(\w+)\(([^)]*)\)/);
+  if (/^def\s+(\w+)|^function\s+(\w+)|^static\s+void\s+(\w+)|^void\s+(\w+)|^int\s+(\w+)|^double\s+(\w+)|^float\s+(\w+)|^bool\s+(\w+)/.test(line)) {
+    const funcMatch = line.match(/(?:def|function|void|int|double|float|bool)\s+(\w+)\(([^)]*)\)/);
     if (funcMatch) {
       const params = funcMatch[2];
       return params ? `Get input: ${params}` : `Start process`;
@@ -81,7 +349,30 @@ function codeToAlgorithm(line, language = 'python') {
   
   // Loop statements - simplified
   if (/^for\s+/.test(line) || /^for\s*\(/.test(line)) {
-    // Handle Java/C/JavaScript style: for (int i = 0; i < 5; i++)
+    // Handle C++/Java/JavaScript style: for (int i = 0; i < 5; i++) or for (int i = 0; i < n; i++)
+    const cppForMatch = line.match(/for\s*\(\s*(?:int|let|var|auto)\s+(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<\s*(\w+|\d+)/);
+    if (cppForMatch) {
+      const start = parseInt(cppForMatch[2]);
+      const end = cppForMatch[3];
+      if (!isNaN(parseInt(end))) {
+        const count = parseInt(end) - start;
+        return `Repeat ${count} times`;
+      }
+      return `For ${cppForMatch[1]} = ${start} to ${end}`;
+    }
+    
+    const cppForMatch2 = line.match(/for\s*\(\s*(?:int|let|var|auto)\s+(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<=\s*(\w+|\d+)/);
+    if (cppForMatch2) {
+      const start = parseInt(cppForMatch2[2]);
+      const end = cppForMatch2[3];
+      if (!isNaN(parseInt(end))) {
+        const count = parseInt(end) - start + 1;
+        return `Repeat ${count} times`;
+      }
+      return `For ${cppForMatch2[1]} = ${start} to ${end}`;
+    }
+    
+    // Old pattern matching for backward compatibility
     const javaForMatch = line.match(/for\s*\(\s*(?:int|let|var)?\s*\w+\s*=\s*\d+\s*;\s*\w+\s*<\s*(\d+)/);
     if (javaForMatch) {
       return `Repeat ${javaForMatch[1]} times`;
@@ -177,6 +468,65 @@ function codeToAlgorithm(line, language = 'python') {
     }
   }
   
+  // Switch statement
+  if (/^switch\s*\(/.test(line)) {
+    const switchMatch = line.match(/switch\s*\(\s*(\w+)\s*\)/);
+    if (switchMatch) {
+      return `Check ${switchMatch[1]}`;
+    }
+    return 'Switch on value';
+  }
+  
+  // Case statement
+  if (/^case\s+/.test(line)) {
+    const caseMatch = line.match(/case\s+([^:]+)/);
+    if (caseMatch) {
+      return `Case ${caseMatch[1]}`;
+    }
+    return 'Case';
+  }
+  
+  // Default case
+  if (/^default\s*:/.test(line)) {
+    return 'Default case';
+  }
+  
+  // Break statement
+  if (/^break\s*;/.test(line)) {
+    return 'Break';
+  }
+  
+  // Continue statement
+  if (/^continue\s*;/.test(line)) {
+    return 'Continue';
+  }
+  
+  // C variable declarations with initialization
+  if (/^(int|float|double|char|long|short|bool|void)\s+\w+\s*=/.test(line)) {
+    const declMatch = line.match(/^(int|float|double|char|long|short|bool|void)\s+(\w+)\s*=\s*([^;]+)/);
+    if (declMatch) {
+      const varName = declMatch[2];
+      const value = declMatch[3].trim();
+      if (/[\+\-\*\/]/.test(value)) {
+        return `Calculate ${varName}`;
+      }
+      return `Set ${varName} = ${value.substring(0, 15)}`;
+    }
+  }
+  
+  // C array declaration
+  if (/^(int|float|double|char)\s+\w+\[/.test(line)) {
+    const arrMatch = line.match(/^(int|float|double|char)\s+(\w+)\[([^\]]+)\]/);
+    if (arrMatch) {
+      return `Declare array ${arrMatch[2]}`;
+    }
+  }
+  
+  // Pointer operations
+  if (/\*\w+\s*=|\w+\s*=\s*&/.test(line)) {
+    return 'Pointer assignment';
+  }
+  
   // Array/List operations
   if (/\.append\(|\.push\(|\.add\(/.test(line)) {
     return 'Add to list';
@@ -198,15 +548,23 @@ function codeToAlgorithm(line, language = 'python') {
   return line || 'Process step';
 }
 
-export function parseToGraph(code) {
-  // Detect language first
-  let language = 'python';
-  if (/function\s+\w+|console\.log|let\s+|const\s+|var\s+/.test(code)) language = 'javascript';
-  else if (/System\.out\.println|public\s+static|public\s+class|class\s+\w+\s*\{/.test(code)) language = 'java';
-  else if (/#include|printf|cout/.test(code)) language = 'c';
-  else if (/SELECT|FROM|WHERE|INSERT|UPDATE|DELETE/i.test(code)) language = 'sql';
-  else if (/<html|<head|<body|<div|<style/i.test(code)) language = 'html';
-  
+// Main parseToGraph function
+export function parseToGraph(code, language = 'PYTHON') {
+  if (!code || !code.trim()) {
+    return { nodes: [], edges: [] };
+  }
+
+  const lang = language.toUpperCase();
+
+  // Use specialized parsers for SQL and HTML
+  if (lang === 'SQL') {
+    return parseSQLToGraph(code);
+  }
+
+  if (lang === 'HTML/CSS' || lang === 'HTML') {
+    return parseHTMLToGraph(code);
+  }
+
   const rawLines = code.split("\n");
   const lines = rawLines
     .map((l, index) => ({ 
@@ -217,18 +575,25 @@ export function parseToGraph(code) {
     }))
     .filter(l => {
       const t = l.text;
-      // Filter out comments, imports, and language-specific boilerplate
       if (!t.length) return false;
       if (t.startsWith("#") || t.startsWith("//")) return false;
       if (t.startsWith("import ") || t.startsWith("using ")) return false;
       
-      // Java-specific filtering
+      // Filter C/C++ specific constructs
+      if (language === 'c' || language === 'cpp') {
+        if (/^typedef\s+/.test(t)) return false;
+        if (/^struct\s+\w+\s*\{?\s*$/.test(t)) return false;
+        if (/^enum\s+\w+\s*\{?\s*$/.test(t)) return false;
+        if (/^\};?\s*$/.test(t)) return false;
+      }
+      
       if (language === 'java' || language === 'c' || language === 'cpp' || language === 'javascript') {
-        if (/^(class|public\s+class)\s+\w+\s*\{?\s*$/.test(t)) return false; // Skip class declaration
-        if (/^public\s+static\s+void\s+main\s*\(/.test(t)) return false; // Skip main method declaration
-        if (/^\{\s*$/.test(t)) return false; // Skip standalone opening braces
-        if (/^\}\s*$/.test(t)) return false; // Skip standalone closing braces
-        if (/^return\s+0\s*;?\s*$/.test(t)) return false; // Skip return 0 in C/C++
+        if (/^(class|public\s+class)\s+\w+\s*\{?\s*$/.test(t)) return false;
+        if (/^public\s+static\s+void\s+main\s*\(/.test(t)) return false;
+        if (/^int\s+main\s*\(/.test(t)) return false;
+        if (/^\{\s*$/.test(t)) return false;
+        if (/^\}\s*$/.test(t)) return false;
+        if (/^return\s+0\s*;?\s*$/.test(t)) return false;
       }
       
       return true;
@@ -238,15 +603,13 @@ export function parseToGraph(code) {
   let edges = [];
   let id = 1;
 
-  // Special handling for SQL
-  if (language === 'sql') {
-    return parseSQLToGraph(code);
-  }
-
-  // Special handling for HTML/CSS
-  if (language === 'html') {
-    return parseHTMLToGraph(code);
-  }
+  // REMOVE these duplicate checks - they're already handled above
+  // if (language === 'sql') {
+  //   return parseSQLToGraph(code);
+  // }
+  // if (language === 'html') {
+  //   return parseHTMLToGraph(code);
+  // }
 
   // Add Start node
   const startNode = { 
@@ -281,11 +644,37 @@ export function parseToGraph(code) {
     edges.push({ from: fromId, to: toId, label });
   };
 
+  let braceDepth = 0; // Track brace depth for C/C++/Java/JavaScript
+  let loopBraceDepth = {}; // Track at what brace depth each loop started
+
   for (let i = 0; i < lines.length; i++) {
     const lineObj = lines[i];
     const line = lineObj.text;
     const lineNumber = lineObj.lineNumber;
     const indent = lineObj.indent;
+    const original = lineObj.original;
+
+    // Track brace depth for C-style languages
+    if (language === 'java' || language === 'c' || language === 'cpp' || language === 'javascript') {
+      // Count opening and closing braces in original line
+      const openBraces = (original.match(/\{/g) || []).length;
+      const closeBraces = (original.match(/\}/g) || []).length;
+      
+      // Check if we're exiting a loop
+      if (closeBraces > 0 && loopStack.length > 0) {
+        const currentLoopDepth = loopBraceDepth[loopStack[loopStack.length - 1].loopNode.id];
+        if (braceDepth <= currentLoopDepth) {
+          // Exiting the loop
+          if (currentNode && currentNode !== loopStack[loopStack.length - 1].loopNode) {
+            createEdge(currentNode.id, loopStack[loopStack.length - 1].loopNode.id, "Loop back");
+          }
+          currentNode = loopStack[loopStack.length - 1].loopNode;
+          loopStack.pop();
+        }
+      }
+      
+      braceDepth += openBraces - closeBraces;
+    }
 
     // Skip empty lines and closing braces
     if (!line || /^[\}\)]\s*$/.test(line)) continue;
@@ -298,15 +687,12 @@ export function parseToGraph(code) {
       if (language === 'python' && indent <= topIf.indent && !line.startsWith('elif') && !line.startsWith('else') && !line.startsWith('for') && !line.startsWith('while')) {
         ifStack.pop();
       }
-      
-      // For Java/C/JavaScript: check for end of block (closing brace already filtered)
-      // We need to track brace depth differently
     }
 
     let node = null;
 
     // Function definition
-    if (/^(def|function|void|static\s+void|public\s+static\s+void)\s+/.test(line)) {
+    if (/^(def|function|void|int|double|float|bool|string|auto|static\s+void|public\s+static\s+void)\s+/.test(line)) {
       // Skip main method - it's just the entry point
       if (/main\s*\(/.test(line)) {
         continue;
@@ -314,20 +700,23 @@ export function parseToGraph(code) {
       
       const funcMatch = line.match(/\(([^)]+)\)/);
       if (funcMatch && funcMatch[1].trim()) {
-        // Extract just the parameter names from Java style (int n) or Python style (n)
+        // Extract just the parameter names from various language styles
         const params = funcMatch[1].trim();
         
-        // For Java, extract variable names from "Type varName" patterns
+        // For C++/Java/C, extract variable names from "Type varName" patterns
         let paramNames = params;
         if (language === 'java' || language === 'c' || language === 'cpp') {
-          const javaParams = params.split(',').map(p => {
+          const cppParams = params.split(',').map(p => {
             const parts = p.trim().split(/\s+/);
-            return parts.length > 1 ? parts[parts.length - 1] : parts[0];
+            // Handle references (&) and pointers (*) in C++
+            let varName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+            varName = varName.replace(/^[&*]+/, ''); // Remove & or * prefix
+            return varName;
           }).join(', ');
-          paramNames = javaParams;
+          paramNames = cppParams;
         }
         
-        node = createNode(`Get input: ${paramNames}`, 'input', 'parallelogram', lineNumber);
+        node = createNode(`Parameters: ${paramNames}`, 'input', 'parallelogram', lineNumber);
         createEdge(currentNode.id, node.id);
         currentNode = node;
       }
@@ -399,27 +788,71 @@ export function parseToGraph(code) {
       const algorithmText = codeToAlgorithm(line, language);
       node = createNode(algorithmText, 'loop', 'diamond', lineNumber);
       
+      let label = "";
+      // Check if we're in an else block
+      if (ifStack.length > 0) {
+        const topIf = ifStack[ifStack.length - 1];
+        if (topIf.hasElse && !topIf.noNode) {
+          label = "No";
+          topIf.noNode = node;
+        }
+        // Clear ifStack since we're now in the loop
+        ifStack = [];
+      }
+      
       // Connect from all pending if/else nodes if they exist
       if (afterIfNodes.length > 0) {
-        // Connect all branch nodes to this loop (no labels - they all flow here)
+        // Connect all branch nodes to this loop
         afterIfNodes.forEach(afterNode => {
           createEdge(afterNode.id, node.id, "");
         });
         afterIfNodes = [];
       } else {
-        createEdge(currentNode.id, node.id);
+        createEdge(currentNode.id, node.id, label);
       }
       
       loopStack.push({
         loopNode: node,
         indent: indent
       });
-      currentNode = node;
       
-      // Clear ifStack since we're now in the loop
-      if (ifStack.length > 0) {
-        ifStack = [];
+      // Track brace depth for this loop
+      if (language === 'java' || language === 'c' || language === 'cpp' || language === 'javascript') {
+        loopBraceDepth[node.id] = braceDepth;
       }
+      
+      currentNode = node;
+    }
+    
+    // Input statement (scanf in C, cin in C++)
+    else if (/scanf\(|cin\s*>>/.test(line)) {
+      const algorithmText = codeToAlgorithm(line, language);
+      node = createNode(algorithmText, 'input', 'parallelogram', lineNumber);
+      
+      let label = "";
+      if (ifStack.length > 0) {
+        const topIf = ifStack[ifStack.length - 1];
+        if (!topIf.yesNode) {
+          label = "Yes";
+          topIf.yesNode = node;
+          createEdge(currentNode.id, node.id, label);
+          afterIfNodes.push(node);
+        } else if (topIf.hasElse && !topIf.noNode) {
+          label = "No";
+          topIf.noNode = node;
+          createEdge(currentNode.id, node.id, label);
+          afterIfNodes.push(node);
+        } else {
+          createEdge(currentNode.id, node.id, label);
+        }
+      } else if (loopStack.length > 0 && currentNode.type === 'loop') {
+        label = "Yes";
+        createEdge(currentNode.id, node.id, label);
+      } else {
+        createEdge(currentNode.id, node.id, label);
+      }
+      
+      currentNode = node;
     }
     
     // Print/Output statement
@@ -454,6 +887,38 @@ export function parseToGraph(code) {
       currentNode = node;
     }
     
+    // Switch statement
+    else if (/^switch\s*\(/.test(line)) {
+      const algorithmText = codeToAlgorithm(line, language);
+      node = createNode(algorithmText, 'decision', 'diamond', lineNumber);
+      createEdge(currentNode.id, node.id);
+      currentNode = node;
+    }
+    
+    // Case statement
+    else if (/^case\s+/.test(line)) {
+      const algorithmText = codeToAlgorithm(line, language);
+      node = createNode(algorithmText, 'decision', 'diamond', lineNumber);
+      createEdge(currentNode.id, node.id);
+      currentNode = node;
+    }
+    
+    // Default case
+    else if (/^default\s*:/.test(line)) {
+      const algorithmText = codeToAlgorithm(line, language);
+      node = createNode(algorithmText, 'process', 'rectangle', lineNumber);
+      createEdge(currentNode.id, node.id);
+      currentNode = node;
+    }
+    
+    // Break/Continue statements
+    else if (/^(break|continue)\s*;/.test(line)) {
+      const algorithmText = codeToAlgorithm(line, language);
+      node = createNode(algorithmText, 'process', 'rectangle', lineNumber);
+      createEdge(currentNode.id, node.id);
+      currentNode = node;
+    }
+    
     // Return statement
     else if (/^return\b/.test(line)) {
       const algorithmText = codeToAlgorithm(line, language);
@@ -463,7 +928,7 @@ export function parseToGraph(code) {
     }
     
     // Function call
-    else if (/(\w+)\([^)]*\)/.test(line) && !/^(if|for|while|elif|print|console|println)/.test(line)) {
+    else if (/(\w+)\([^)]*\)/.test(line) && !/^(if|for|while|elif|print|console|println|switch|case)/.test(line)) {
       const algorithmText = codeToAlgorithm(line, language);
       node = createNode(algorithmText, 'process', 'rectangle', lineNumber);
       
@@ -487,25 +952,22 @@ export function parseToGraph(code) {
         if (!topIf.yesNode) {
           label = "Yes";
           topIf.yesNode = node;
+          afterIfNodes.push(node);
         } else if (topIf.hasElse && !topIf.noNode) {
           label = "No";
           topIf.noNode = node;
+          afterIfNodes.push(node);
         }
       } else if (loopStack.length > 0 && currentNode.type === 'loop') {
         label = "Yes";
       }
       
       createEdge(currentNode.id, node.id, label);
-      
-      if (ifStack.length > 0) {
-        afterIfNodes.push(node);
-      }
-      
       currentNode = node;
     }
   }
 
-  // Handle loop back edges
+  // Handle loop back edges (for any remaining loops that didn't close)
   if (loopStack.length > 0) {
     const loop = loopStack[loopStack.length - 1];
     if (currentNode && currentNode !== loop.loopNode) {
@@ -520,280 +982,14 @@ export function parseToGraph(code) {
   // Connect to end node
   if (loopStack.length > 0) {
     createEdge(loopStack[loopStack.length - 1].loopNode.id, endNode.id, "No");
+  } else if (afterIfNodes.length > 0) {
+    // Connect all branch end nodes to the end
+    afterIfNodes.forEach(afterNode => {
+      createEdge(afterNode.id, endNode.id);
+    });
   } else if (currentNode) {
     createEdge(currentNode.id, endNode.id);
   }
-
-  return { nodes, edges };
-}
-
-function parseSQLToGraph(code) {
-  const nodes = [];
-  const edges = [];
-  let id = 1;
-
-  // Start
-  nodes.push({
-    id: id++,
-    text: 'Start',
-    type: 'start',
-    shape: 'terminal',
-    lineNumber: 1
-  });
-
-  let prev = nodes[0];
-
-  // Parse SELECT statement
-  if (/SELECT/i.test(code)) {
-    const selectMatch = code.match(/SELECT\s+(.+?)\s+FROM/is);
-    const columns = selectMatch ? selectMatch[1].trim() : '*';
-    
-    const node = {
-      id: id++,
-      text: `Select columns: ${columns}`,
-      type: 'input',
-      shape: 'parallelogram',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse FROM clause
-  if (/FROM/i.test(code)) {
-    const fromMatch = code.match(/FROM\s+(\w+)/i);
-    const table = fromMatch ? fromMatch[1] : 'table';
-    
-    const node = {
-      id: id++,
-      text: `From table: ${table}`,
-      type: 'process',
-      shape: 'rectangle',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse WHERE clause
-  if (/WHERE/i.test(code)) {
-    const whereMatch = code.match(/WHERE\s+(.+?)(?:;|$)/is);
-    const condition = whereMatch ? whereMatch[1].trim().replace(/;/g, '') : 'condition';
-    
-    const node = {
-      id: id++,
-      text: `Filter: ${condition}`,
-      type: 'decision',
-      shape: 'diamond',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse INSERT
-  if (/INSERT/i.test(code)) {
-    const insertMatch = code.match(/INSERT\s+INTO\s+(\w+)/i);
-    const table = insertMatch ? insertMatch[1] : 'table';
-    
-    const node = {
-      id: id++,
-      text: `Insert into: ${table}`,
-      type: 'output',
-      shape: 'parallelogram',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse UPDATE
-  if (/UPDATE/i.test(code)) {
-    const updateMatch = code.match(/UPDATE\s+(\w+)/i);
-    const table = updateMatch ? updateMatch[1] : 'table';
-    
-    const node = {
-      id: id++,
-      text: `Update table: ${table}`,
-      type: 'process',
-      shape: 'rectangle',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse DELETE
-  if (/DELETE/i.test(code)) {
-    const deleteMatch = code.match(/DELETE\s+FROM\s+(\w+)/i);
-    const table = deleteMatch ? deleteMatch[1] : 'table';
-    
-    const node = {
-      id: id++,
-      text: `Delete from: ${table}`,
-      type: 'process',
-      shape: 'rectangle',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }  // Result
-  const resultNode = {
-    id: id++,
-    text: 'Return results',
-    type: 'output',
-    shape: 'parallelogram',
-    lineNumber: 1
-  };
-  nodes.push(resultNode);
-  edges.push({ from: prev.id, to: resultNode.id });
-
-  // End
-  const endNode = { 
-    id: id++, 
-    text: 'End', 
-    type: 'end',
-    shape: 'terminal',
-    lineNumber: 1
-  };
-  nodes.push(endNode);
-  edges.push({ from: resultNode.id, to: endNode.id });
-
-  return { nodes, edges };
-}
-
-function parseHTMLToGraph(code) {
-  const nodes = [];
-  const edges = [];
-  let id = 1;
-
-  // Start
-  nodes.push({ 
-    id: id++, 
-    text: 'Start', 
-    type: 'start',
-    shape: 'terminal',
-    lineNumber: 1
-  });
-
-  let prev = nodes[0];
-
-  // Parse HTML structure
-  if (/<html/i.test(code)) {
-    const node = {
-      id: id++,
-      text: 'Create HTML document',
-      type: 'process',
-      shape: 'rectangle',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse head section
-  if (/<head/i.test(code)) {
-    const titleMatch = code.match(/<title>(.+?)<\/title>/i);
-    const title = titleMatch ? titleMatch[1] : 'Document';
-    
-    const node = {
-      id: id++,
-      text: `Set title: "${title}"`,
-      type: 'process',
-      shape: 'rectangle',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse body section
-  if (/<body/i.test(code)) {
-    const node = {
-      id: id++,
-      text: 'Create body content',
-      type: 'process',
-      shape: 'rectangle',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse headings
-  const h1Match = code.match(/<h1[^>]*>(.+?)<\/h1>/i);
-  if (h1Match) {
-    const node = {
-      id: id++,
-      text: `Display heading: "${h1Match[1]}"`,
-      type: 'output',
-      shape: 'parallelogram',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse paragraphs
-  const pMatches = code.match(/<p[^>]*>(.+?)<\/p>/gi);
-  if (pMatches && pMatches.length > 0) {
-    const node = {
-      id: id++,
-      text: `Display ${pMatches.length} paragraph(s)`,
-      type: 'output',
-      shape: 'parallelogram',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Parse styles
-  if (/<style/i.test(code) || /style=/i.test(code)) {
-    const node = {
-      id: id++,
-      text: 'Apply CSS styling',
-      type: 'process',
-      shape: 'rectangle',
-      lineNumber: 1
-    };
-    nodes.push(node);
-    edges.push({ from: prev.id, to: node.id });
-    prev = node;
-  }
-
-  // Render output
-  const renderNode = {
-    id: id++,
-    text: 'Render webpage',
-    type: 'output',
-    shape: 'parallelogram',
-    lineNumber: 1
-  };
-  nodes.push(renderNode);
-  edges.push({ from: prev.id, to: renderNode.id });
-
-  // End
-  const endNode = { 
-    id: id++, 
-    text: 'End', 
-    type: 'end',
-    shape: 'terminal',
-    lineNumber: 1
-  };
-  nodes.push(endNode);
-  edges.push({ from: renderNode.id, to: endNode.id });
 
   return { nodes, edges };
 }
@@ -832,16 +1028,22 @@ for (let i = 0; i < 5; i++) {
   }
 }`,
   c: `#include <stdio.h>
-void checkEvenOdd(int n) {
-  if (n % 2 == 0)
-    printf("Even\\n");
-  else
-    printf("Odd\\n");
-}
 
 int main() {
-  for (int i = 0; i < 5; i++)
-    checkEvenOdd(i);
+  int num, sum = 0;
+  
+  printf("Enter a number: ");
+  scanf("%d", &num);
+  
+  if (num < 0) {
+    printf("Negative number\\n");
+  } else {
+    for (int i = 1; i <= num; i++) {
+      sum = sum + i;
+    }
+    printf("Sum = %d\\n", sum);
+  }
+  
   return 0;
 }`,
   cpp: `#include <iostream>
@@ -849,12 +1051,17 @@ using namespace std;
 
 void checkEvenOdd(int n) {
   if (n % 2 == 0)
-    cout << "Even\\n";
+    cout << "Even" << endl;
   else
-    cout << "Odd\\n";
+    cout << "Odd" << endl;
 }
 
 int main() {
+  int num;
+  cout << "Enter a number: ";
+  cin >> num;
+  checkEvenOdd(num);
+  
   for (int i = 0; i < 5; i++)
     checkEvenOdd(i);
   return 0;

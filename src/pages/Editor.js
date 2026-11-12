@@ -12,14 +12,77 @@ function Editor() {
   const [highlightedLine, setHighlightedLine] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const textareaRef = useRef(null);
+  const svgRef = useRef(null);
 
   useEffect(() => {
     const langParam = searchParams.get('lang');
     if (langParam && codeTemplates[langParam]) {
       setLang(langParam);
       setCode(codeTemplates[langParam]);
+    } else {
+      // Load saved code from localStorage
+      const savedCode = localStorage.getItem('code2flow_code');
+      const savedLang = localStorage.getItem('code2flow_lang');
+      if (savedCode) setCode(savedCode);
+      if (savedLang) setLang(savedLang);
     }
   }, [searchParams]);
+
+  // Auto-save code to localStorage
+  useEffect(() => {
+    if (code) {
+      const timer = setTimeout(() => {
+        localStorage.setItem('code2flow_code', code);
+        localStorage.setItem('code2flow_lang', lang);
+      }, 1000); // Save after 1 second of no typing
+      return () => clearTimeout(timer);
+    }
+  }, [code, lang]);
+
+  const handleExportImage = () => {
+    const svgElement = document.querySelector('#flowchart-svg');
+    if (!svgElement) {
+      alert('No flowchart to export. Generate a flowchart first!');
+      return;
+    }
+
+    // Create a canvas and convert SVG to PNG
+    const svgData = new XMLSerializer().serializeToString(svgElement);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      
+      canvas.toBlob((blob) => {
+        const link = document.createElement('a');
+        link.download = `flowchart_${Date.now()}.png`;
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+    };
+
+    img.src = url;
+  };
+
+  const handleClearCode = () => {
+    if (window.confirm('Are you sure you want to clear the code?')) {
+      setCode('');
+      setGraph(null);
+      setMessage('');
+      setSelectedNode(null);
+      localStorage.removeItem('code2flow_code');
+    }
+  };
 
   const handleGenerate = () => {
     if (!code.trim()) {
@@ -36,7 +99,10 @@ function Editor() {
       return;
     }
     
-    const g = parseToGraph(code);
+    // FIX: Pass the language parameter!
+    console.log('Calling parseToGraph with language:', lang);
+    const g = parseToGraph(code, lang);  // <--- ADD lang HERE!
+    console.log('Result:', g);
     setGraph(g);
     setMessage('');
   };
@@ -594,6 +660,18 @@ function Editor() {
             <button onClick={handleGenerate} style={styles.button}>
               Generate Flowchart
             </button>
+            
+            {graph && (
+              <button onClick={handleExportImage} style={{...styles.button, background: '#059669'}}>
+                📥 Export PNG
+              </button>
+            )}
+            
+            {code && (
+              <button onClick={handleClearCode} style={{...styles.button, background: '#dc2626'}}>
+                🗑️ Clear
+              </button>
+            )}
           </div>
 
           <textarea
@@ -640,7 +718,9 @@ function Editor() {
                     alignItems: 'flex-start',
                     justifyContent: 'center'
                   }}>
-                    <SvgFlow graph={graph} onNodeClick={handleNodeClick} />
+                    <div id="flowchart-svg">
+                      <SvgFlow graph={graph} onNodeClick={handleNodeClick} />
+                    </div>
                   </div>
                 </div>
                 
@@ -833,55 +913,6 @@ const styles = {
     padding: 40,
     textAlign: 'center',
     fontSize: 15
-  },
-  explanationPanel: {
-    flex: '0 0 38%',
-    background: '#f8fafc',
-    border: '2px solid #e2e8f0',
-    borderRadius: 12,
-    padding: 16,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-    animation: 'slideIn 0.3s ease'
-  },
-  explanationHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottom: '2px solid #e2e8f0'
-  },
-  explanationTitle: {
-    margin: 0,
-    fontSize: 16,
-    fontWeight: 700,
-    color: '#1f2937'
-  },
-  closeButton: {
-    background: 'transparent',
-    border: 'none',
-    fontSize: 20,
-    color: '#6b7280',
-    cursor: 'pointer',
-    padding: '4px 8px',
-    borderRadius: 4,
-    transition: 'all 0.2s ease',
-    fontWeight: 'bold'
-  },
-  explanationContent: {
-    flex: 1,
-    overflowY: 'auto',
-    paddingRight: 8
-  },
-  explanationText: {
-    margin: '0 0 12px 0',
-    fontSize: 14,
-    lineHeight: 1.6,
-    color: '#374151',
-    whiteSpace: 'pre-wrap'
   }
 };
 

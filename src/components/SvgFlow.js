@@ -159,12 +159,24 @@ function SvgFlow({ graph, code, onNodeClick }) {
     }
 
     const containerWidth = svgRef.current.parentElement?.clientWidth || 900;
-    const width = 1100;
-    const height = 1000;
-    const nodeWidth = 180;
-    const nodeHeight = 60;
-    const verticalGap = 160;
-    const horizontalGap = 300;
+    
+    // Dynamic sizing based on graph complexity
+    const nodeCount = g.nodes.length;
+    const edgeCount = g.edges.length;
+    const hasDecisions = g.nodes.some(n => n.type === 'decision' || n.type === 'loop');
+    
+    const nodeWidth = 240;
+    const nodeHeight = 80;
+    const verticalGap = 200;
+    const horizontalGap = hasDecisions ? 400 : 300;
+    
+    // Calculate required dimensions
+    const estimatedLayers = Math.ceil(Math.sqrt(nodeCount)) + 2;
+    const estimatedWidth = Math.max(1600, horizontalGap * 4);
+    const estimatedHeight = Math.max(1400, verticalGap * estimatedLayers + 200);
+    
+    const width = estimatedWidth;
+    const height = estimatedHeight;
 
     svgEl.attr("width", "100%").attr("height", height);
     svgEl.attr("viewBox", `0 0 ${width} ${height}`).attr("preserveAspectRatio", "xMidYMin meet");
@@ -234,9 +246,13 @@ function SvgFlow({ graph, code, onNodeClick }) {
       }
     }
     
-    // Position nodes based on layers
+    // Position nodes based on layers with improved centering
     const centerX = width / 2;
-    const startY = 60;
+    const startY = 80;
+    
+    // First pass: calculate positions
+    const maxNodesInLayer = Math.max(...Array.from(layerNodes.values()).map(nodes => nodes.length));
+    const effectiveHorizontalGap = maxNodesInLayer > 2 ? horizontalGap * 0.9 : horizontalGap;
     
     layerNodes.forEach((nodesInLayer, layer) => {
       const y = startY + layer * verticalGap;
@@ -245,16 +261,23 @@ function SvgFlow({ graph, code, onNodeClick }) {
       nodesInLayer.sort((a, b) => a.branchPosition - b.branchPosition);
       
       if (nodesInLayer.length === 1) {
-        // Single node - center it
+        // Single node - center it perfectly
         nodesInLayer[0].node.x = centerX;
         nodesInLayer[0].node.y = y;
+      } else if (nodesInLayer.length === 2) {
+        // Two nodes - balanced on either side of center
+        const offset = effectiveHorizontalGap / 2;
+        nodesInLayer[0].node.x = centerX - offset;
+        nodesInLayer[0].node.y = y;
+        nodesInLayer[1].node.x = centerX + offset;
+        nodesInLayer[1].node.y = y;
       } else {
-        // Multiple nodes - spread them out
-        const totalWidth = (nodesInLayer.length - 1) * horizontalGap;
+        // Multiple nodes - distribute evenly
+        const totalWidth = (nodesInLayer.length - 1) * effectiveHorizontalGap;
         const startX = centerX - totalWidth / 2;
         
         nodesInLayer.forEach((item, index) => {
-          item.node.x = startX + index * horizontalGap;
+          item.node.x = startX + index * effectiveHorizontalGap;
           item.node.y = y;
         });
       }
@@ -264,19 +287,19 @@ function SvgFlow({ graph, code, onNodeClick }) {
       });
     });
 
-    // markers for arrows - small, neat arrowheads
+    // markers for arrows - larger, more visible arrowheads
     const defs = svgEl.append("defs");
     
     defs.append("marker")
       .attr("id", "arrow")
-      .attr("viewBox", "0 0 10 10")
-      .attr("refX", 9)
-      .attr("refY", 5)
-      .attr("markerWidth", 5)
-      .attr("markerHeight", 5)
+      .attr("viewBox", "0 0 12 12")
+      .attr("refX", 11)
+      .attr("refY", 6)
+      .attr("markerWidth", 8)
+      .attr("markerHeight", 8)
       .attr("orient", "auto")
       .append("path")
-      .attr("d", "M 0 0 L 10 5 L 0 10 z")
+      .attr("d", "M 0 0 L 12 6 L 0 12 z")
       .attr("fill", "#000000")
       .style("stroke", "none");
 
@@ -314,20 +337,16 @@ function SvgFlow({ graph, code, onNodeClick }) {
         
         if (dx > 0) {
           // Right branch (No) - start from right corner of diamond
-          fromPoint = { x: from.x + 120, y: from.y };
+          fromPoint = { x: from.x + 140, y: from.y };
           toPoint = { x: to.x, y: to.y - nodeHeight / 2 - 8 };
         } else {
           // Left branch (Yes) - start from left corner of diamond
-          fromPoint = { x: from.x - 120, y: from.y };
+          fromPoint = { x: from.x - 140, y: from.y };
           toPoint = { x: to.x, y: to.y - nodeHeight / 2 - 8 };
         }
         
-        // Create clear step-by-step path:
-        // 1. Go down from diamond corner
-        // 2. Go horizontally toward target
-        // 3. Go down to target node
-        const step1Y = fromPoint.y + 50;  // First step down
-        const step2Y = toPoint.y - 20;     // Before final descent
+        // Create clear step-by-step path with smoother curves
+        const step1Y = fromPoint.y + 70;  // First step down (increased from 60)
         
         path = `M ${fromPoint.x} ${fromPoint.y} 
                 L ${fromPoint.x} ${step1Y}
@@ -357,8 +376,8 @@ function SvgFlow({ graph, code, onNodeClick }) {
         .attr("d", path)
         .attr("fill", "none")
         .attr("stroke", "#ffffff")
-        .attr("stroke-width", 8)
-        .attr("opacity", 0.9);
+        .attr("stroke-width", 10)
+        .attr("opacity", 0.95);
 
       // Draw main arrow with solid black color (drawn on top)
       edgeGroup
@@ -366,7 +385,7 @@ function SvgFlow({ graph, code, onNodeClick }) {
         .attr("d", path)
         .attr("fill", "none")
         .attr("stroke", "#000000")
-        .attr("stroke-width", 4)
+        .attr("stroke-width", 5)
         .attr("marker-end", "url(#arrow)");
 
       if (e.label) {
@@ -385,17 +404,17 @@ function SvgFlow({ graph, code, onNodeClick }) {
         }
         // For decision branches (Yes/No from diamond corners)
         else if (isDecision && Math.abs(dx) > 15) {
-          // Position label between diamond and target node, on the vertical arrow
-          const step1Y = from.y + 50;
+          // Position label near the diamond, on the vertical arrow going down
+          const step1Y = from.y + 60;
           
           if (dx > 0) {
-            // Right branch (No) - position below diamond, on vertical part
-            labelX = from.x + 120;
-            labelY = from.y + 40; // On the vertical arrow going down
+            // Right branch (No) - position on vertical part
+            labelX = from.x + 140;
+            labelY = from.y + 52; // On the vertical arrow going down
           } else {
-            // Left branch (Yes) - position below diamond, on vertical part  
-            labelX = from.x - 120;
-            labelY = from.y + 40; // On the vertical arrow going down
+            // Left branch (Yes) - position on vertical part  
+            labelX = from.x - 140;
+            labelY = from.y + 52; // On the vertical arrow going down
           }
         }
         // For vertical connections
@@ -412,14 +431,14 @@ function SvgFlow({ graph, code, onNodeClick }) {
         
         edgeGroup
           .append("rect")
-          .attr("x", labelX - 38)
-          .attr("y", labelY - 23)
-          .attr("width", 76)
-          .attr("height", 46)
-          .attr("rx", 12)
+          .attr("x", labelX - 42)
+          .attr("y", labelY - 26)
+          .attr("width", 84)
+          .attr("height", 52)
+          .attr("rx", 14)
           .attr("fill", "#ffffff")
           .attr("stroke", "#2563eb")
-          .attr("stroke-width", 4);
+          .attr("stroke-width", 5);
         
         edgeGroup
           .append("text")
@@ -428,7 +447,7 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("fill", "#1e40af")
-          .style("font-size", "24px")
+          .style("font-size", "26px")
           .style("font-weight", "900")
           .text(e.label);
       }
@@ -462,8 +481,8 @@ function SvgFlow({ graph, code, onNodeClick }) {
         // Diamond for decisions and loops - make it bigger and clearer
         const cx = d.x;
         const cy = d.y;
-        const w = 120;
-        const h = 55;
+        const w = 140;
+        const h = 65;
         const points = [
           [cx, cy - h],
           [cx + w, cy],
@@ -478,17 +497,16 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .append("polygon")
           .attr("points", points)
           .attr("fill", "#fbbf24")
-          .attr("opacity", 0.3)
-          .attr("transform", "translate(3, 3)");
+          .attr("opacity", 0.2)
+          .attr("transform", "translate(4, 4)");
         
         node
           .append("polygon")
           .attr("points", points)
-          .attr("fill", "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)")
           .attr("fill", "#fef9c3")
           .attr("stroke", "#f59e0b")
-          .attr("stroke-width", 3.5)
-          .style("filter", "drop-shadow(0px 2px 4px rgba(0,0,0,0.1))");
+          .attr("stroke-width", 4)
+          .style("filter", "drop-shadow(0px 3px 6px rgba(0,0,0,0.15))");
         
         // Text with better wrapping
         const text = d.label || d.text || '';
@@ -500,20 +518,20 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("fill", "#92400e")
-          .style("font-size", "15px")
+          .style("font-size", "16px")
           .style("font-weight", "700");
         
-        if (text.length > 15) {
+        if (text.length > 20 && words.length > 2) {
           const mid = Math.ceil(words.length / 2);
           textElement
             .append("tspan")
             .attr("x", d.x)
-            .attr("dy", "-0.5em")
+            .attr("dy", "-0.6em")
             .text(words.slice(0, mid).join(' '));
           textElement
             .append("tspan")
             .attr("x", d.x)
-            .attr("dy", "1.2em")
+            .attr("dy", "1.3em")
             .text(words.slice(mid).join(' '));
         } else {
           textElement.text(text);
@@ -530,8 +548,8 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("rx", nodeHeight / 2)
           .attr("ry", nodeHeight / 2)
           .attr("fill", "#10b981")
-          .attr("opacity", 0.3)
-          .attr("transform", "translate(3, 3)");
+          .attr("opacity", 0.2)
+          .attr("transform", "translate(4, 4)");
         
         node
           .append("rect")
@@ -543,8 +561,8 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("ry", nodeHeight / 2)
           .attr("fill", "#d1fae5")
           .attr("stroke", "#10b981")
-          .attr("stroke-width", 3.5)
-          .style("filter", "drop-shadow(0px 2px 4px rgba(0,0,0,0.1))");
+          .attr("stroke-width", 4)
+          .style("filter", "drop-shadow(0px 3px 6px rgba(0,0,0,0.15))");
 
         node
           .append("text")
@@ -553,12 +571,12 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("fill", "#065f46")
-          .style("font-size", "16px")
+          .style("font-size", "18px")
           .style("font-weight", "700")
           .text(d.label || d.text);
       } else if (d.shape === "parallelogram" || d.type === "input" || d.type === "output") {
         // Parallelogram for input/output
-        const skew = 20;
+        const skew = 25;
         const points = [
           [x + skew, y],
           [x + nodeWidth, y],
@@ -573,28 +591,44 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .append("polygon")
           .attr("points", points)
           .attr("fill", "#3b82f6")
-          .attr("opacity", 0.3)
-          .attr("transform", "translate(3, 3)");
+          .attr("opacity", 0.2)
+          .attr("transform", "translate(4, 4)");
         
         node
           .append("polygon")
           .attr("points", points)
           .attr("fill", "#dbeafe")
           .attr("stroke", "#3b82f6")
-          .attr("stroke-width", 3)
-          .style("filter", "drop-shadow(0px 2px 4px rgba(0,0,0,0.1))");
+          .attr("stroke-width", 4)
+          .style("filter", "drop-shadow(0px 3px 6px rgba(0,0,0,0.15))");
 
         const text = d.label || d.text || '';
-        node
+        const words = text.split(' ');
+        const textElement = node
           .append("text")
           .attr("x", d.x)
           .attr("y", d.y)
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("fill", "#1e40af")
-          .style("font-size", "14px")
-          .style("font-weight", "600")
-          .text(text);
+          .style("font-size", "15px")
+          .style("font-weight", "600");
+
+        if (text.length > 25 && words.length > 3) {
+          const mid = Math.ceil(words.length / 2);
+          textElement
+            .append("tspan")
+            .attr("x", d.x)
+            .attr("dy", "-0.5em")
+            .text(words.slice(0, mid).join(' '));
+          textElement
+            .append("tspan")
+            .attr("x", d.x)
+            .attr("dy", "1.2em")
+            .text(words.slice(mid).join(' '));
+        } else {
+          textElement.text(text);
+        }
       } else {
         // Rectangle for process
         // Add shadow
@@ -604,10 +638,10 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("y", y)
           .attr("width", nodeWidth)
           .attr("height", nodeHeight)
-          .attr("rx", 8)
+          .attr("rx", 10)
           .attr("fill", "#a855f7")
-          .attr("opacity", 0.3)
-          .attr("transform", "translate(3, 3)");
+          .attr("opacity", 0.2)
+          .attr("transform", "translate(4, 4)");
         
         node
           .append("rect")
@@ -615,11 +649,11 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("y", y)
           .attr("width", nodeWidth)
           .attr("height", nodeHeight)
-          .attr("rx", 8)
+          .attr("rx", 10)
           .attr("fill", "#f3e8ff")
           .attr("stroke", "#9333ea")
-          .attr("stroke-width", 3)
-          .style("filter", "drop-shadow(0px 2px 4px rgba(0,0,0,0.1))");
+          .attr("stroke-width", 4)
+          .style("filter", "drop-shadow(0px 3px 6px rgba(0,0,0,0.15))");
 
         const text = d.label || d.text || '';
         const words = text.split(' ');
@@ -630,20 +664,20 @@ function SvgFlow({ graph, code, onNodeClick }) {
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("fill", "#581c87")
-          .style("font-size", "14px")
+          .style("font-size", "15px")
           .style("font-weight", "600");
 
-        if (text.length > 20 && words.length > 2) {
+        if (text.length > 25 && words.length > 3) {
           const mid = Math.ceil(words.length / 2);
           textElement
             .append("tspan")
             .attr("x", d.x)
-            .attr("dy", "-0.4em")
+            .attr("dy", "-0.5em")
             .text(words.slice(0, mid).join(' '));
           textElement
             .append("tspan")
             .attr("x", d.x)
-            .attr("dy", "1.1em")
+            .attr("dy", "1.2em")
             .text(words.slice(mid).join(' '));
         } else {
           textElement.text(text);
